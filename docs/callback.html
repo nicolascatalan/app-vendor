@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PropPublish – Autenticando...</title>
+  <style>
+    body {
+      font-family: -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #0033A0;
+      color: white;
+      text-align: center;
+    }
+    p { font-size: 18px; opacity: 0.9; }
+    a { color: #FFD700; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div>
+    <p>Volviendo a PropPublish…</p>
+    <p><a id="fallback" href="#">Toca aquí si la app no abre</a></p>
+  </div>
+  <script>
+    // Toma todos los query params que envió MercadoLibre y los reenvía a la app
+    var search = window.location.search; // e.g. ?code=TG-xxx&state=yyy
+    var deepLink = 'propublish://callback' + search;
+
+    document.getElementById('fallback').href = deepLink;
+
+    // Intentar abrir la app automáticamente
+    window.location.href = deepLink;
+  </script>
+</body>
+</html>
