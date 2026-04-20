@@ -1,25 +1,62 @@
 {
   "build": {
+    "apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "ML_APP_ID": "4309829039620443",
+        "ML_APP_SECRET": "sSmPc0fE7XbTB6dZ4440Ch2OJRjuQUFo",
+        "ML_REDIRECT_URI": "https://nicolascatalan.github.io/app-vendor/callback",
+        "ML_SCOPES": "read write",
+        "ML_USE_PKCE": "true",
+        "GOOGLE_MAPS_API_KEY": "demo_maps_api_key"
+      }
+    },
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "development",
       "env": {
         "APP_ENV": "development"
       }
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "env": {
         "APP_ENV": "preview"
       }
     },
     "production": {
+      "distribution": "store",
+      "channel": "production",
       "env": {
         "APP_ENV": "production"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "android": {
+        "buildType": "apk"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6477234567",
+        "appleId": "${APPLE_ID}"
+      },
+      "android": {
+        "serviceAccountKeyPath": "${ANDROID_SERVICE_ACCOUNT_JSON}",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    }
+  },
+  "cli": {
+    "version": ">= 5.1.0"
   }
 }
