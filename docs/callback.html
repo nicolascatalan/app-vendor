@@ -26,14 +26,21 @@
     <p><a id="fallback" href="#">Toca aquí si la app no abre</a></p>
   </div>
   <script>
-    // Toma todos los query params que envió MercadoLibre y los reenvía a la app
     var search = window.location.search; // e.g. ?code=TG-xxx&state=yyy
+    var params = search.slice(1); // quitar el '?'
+
+    // Intent URL para Android Chrome (no bloquea como los custom schemes)
+    var intentUrl = 'intent://callback' + search + '#Intent;scheme=propublish;package=com.propublish.app;end';
+    // Fallback normal para iOS u otros
     var deepLink = 'propublish://callback' + search;
 
-    document.getElementById('fallback').href = deepLink;
+    var isAndroid = /android/i.test(navigator.userAgent);
 
-    // Intentar abrir la app automáticamente
-    window.location.href = deepLink;
+    var finalUrl = isAndroid ? intentUrl : deepLink;
+    document.getElementById('fallback').href = finalUrl;
+
+    // Redirigir automáticamente
+    window.location.href = finalUrl;
   </script>
 </body>
 </html>
