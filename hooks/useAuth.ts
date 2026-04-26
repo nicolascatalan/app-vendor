@@ -1,15 +1,28 @@
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
-import { useState, useEffect, useCallback } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const ML_APP_ID = Constants.expoConfig?.extra?.ML_APP_ID ?? '';
 const ML_APP_SECRET = Constants.expoConfig?.extra?.ML_APP_SECRET ?? '';
+const ML_REDIRECT_URI = Constants.expoConfig?.extra?.ML_REDIRECT_URI ?? '';
+const ML_SCOPES_RAW = Constants.expoConfig?.extra?.ML_SCOPES ?? 'read write';
+const ML_USE_PKCE = String(Constants.expoConfig?.extra?.ML_USE_PKCE ?? 'false').toLowerCase() === 'true';
 const ML_AUTH_URL = 'https://auth.mercadolibre.cl/authorization';
 const ML_TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
+
+// Fuera del hook para evitar recreación en cada render
+const DISCOVERY = {
+  authorizationEndpoint: ML_AUTH_URL,
+  tokenEndpoint: ML_TOKEN_URL,
+};
+const ML_SCOPES = String(ML_SCOPES_RAW)
+  .split(/[\s,]+/)
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const SECURE_KEYS = {
   ACCESS_TOKEN: 'ml_access_token',
@@ -25,42 +38,54 @@ export interface MLUser {
   email: string;
 }
 
-export function useAuth() {
+interface AuthContextValue {
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  isAuthenticated: boolean;
+  user: MLUser | null;
+  loading: boolean;
+  getAccessToken: () => Promise<string | null>;
+  refreshAccessToken: () => Promise<string | null>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+function useProvideAuth(): AuthContextValue {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<MLUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'propublish' });
-
-  const discovery = {
-    authorizationEndpoint: ML_AUTH_URL,
-    tokenEndpoint: ML_TOKEN_URL,
-  };
+  const redirectUri = ML_REDIRECT_URI;
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: ML_APP_ID,
       redirectUri,
       responseType: AuthSession.ResponseType.Code,
-      usePKCE: true,
-      scopes: ['read', 'write', 'offline_access'],
+      usePKCE: ML_USE_PKCE,
+      scopes: ML_SCOPES,
     },
-    discovery
+    DISCOVERY
   );
 
   useEffect(() => {
     (async () => {
-      const token = await SecureStore.getItemAsync(SECURE_KEYS.ACCESS_TOKEN);
-      if (token) {
-        const userId = await SecureStore.getItemAsync(SECURE_KEYS.USER_ID);
-        const nickname = await SecureStore.getItemAsync(SECURE_KEYS.NICKNAME);
-        const email = await SecureStore.getItemAsync(SECURE_KEYS.EMAIL);
-        if (userId && nickname) {
-          setUser({ id: userId, nickname, email: email ?? '' });
-          setIsAuthenticated(true);
+      try {
+        const token = await SecureStore.getItemAsync(SECURE_KEYS.ACCESS_TOKEN);
+        if (token) {
+          const userId = await SecureStore.getItemAsync(SECURE_KEYS.USER_ID);
+          const nickname = await SecureStore.getItemAsync(SECURE_KEYS.NICKNAME);
+          const email = await SecureStore.getItemAsync(SECURE_KEYS.EMAIL);
+          if (userId && nickname) {
+            setUser({ id: userId, nickname, email: email ?? '' });
+            setIsAuthenticated(true);
+          }
         }
+      } catch (e) {
+        console.warn('[useAuth] SecureStore error:', e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 
@@ -68,6 +93,14 @@ export function useAuth() {
     if (response?.type === 'success') {
       const { code } = response.params;
       exchangeCodeForToken(code);
+    }
+
+    if (response?.type === 'error' && __DEV__) {
+      console.error('[useAuth] OAuth error response:', {
+        error: response.error,
+        params: response.params,
+        url: response.url,
+      });
     }
   }, [response]);
 
@@ -107,7 +140,9 @@ export function useAuth() {
       setUser({ id: String(userData.id), nickname: userData.nickname, email: userData.email });
       setIsAuthenticated(true);
     } catch (e) {
-      console.error('Auth error:', e);
+      if (__DEV__) {
+        console.error('Auth error:', e);
+      }
     }
   };
 
@@ -143,8 +178,24 @@ export function useAuth() {
   };
 
   const login = useCallback(async () => {
+    if (!ML_APP_ID) {
+      throw new Error('ML_APP_ID no configurado');
+    }
+
+    if (!redirectUri || !redirectUri.startsWith('https://')) {
+      throw new Error('MercadoLibre requiere ML_REDIRECT_URI con https://');
+    }
+
+    if (!request) {
+      throw new Error('OAuth request aún no está lista');
+    }
+
+    if (__DEV__) {
+      console.log('[useAuth] Authorization URL →', request.url);
+    }
+
     await promptAsync();
-  }, [promptAsync]);
+  }, [promptAsync, redirectUri, request]);
 
   const logout = useCallback(async () => {
     await Promise.all(Object.values(SECURE_KEYS).map((k) => SecureStore.deleteItemAsync(k)));
@@ -153,4 +204,20 @@ export function useAuth() {
   }, []);
 
   return { login, logout, isAuthenticated, user, loading, getAccessToken, refreshAccessToken };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const auth = useProvideAuth();
+
+  return createElement(AuthContext.Provider, { value: auth }, children);
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error('useAuth debe usarse dentro de AuthProvider');
+  }
+
+  return context;
 }

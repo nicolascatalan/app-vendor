@@ -46,7 +46,15 @@ export default function PhotoGrid({ photos, onReorder, onDelete, onAdd }: PhotoG
       )}
       {item.uploading && (
         <View style={styles.uploadingOverlay}>
-          <Text style={styles.uploadingText}>⏫</Text>
+          <Text style={styles.uploadingText}>{item.uploadProgress ?? 0}%</Text>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.max(6, item.uploadProgress ?? 0)}%` },
+              ]}
+            />
+          </View>
         </View>
       )}
       {item.uploadError && (
@@ -188,7 +196,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  uploadingText: { fontSize: 24 },
+  uploadingText: { fontSize: 18, color: '#fff', fontWeight: '700', marginBottom: 8 },
+  progressTrack: {
+    width: '70%',
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#60a5fa',
+  },
   errorOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,50,50,0.3)',

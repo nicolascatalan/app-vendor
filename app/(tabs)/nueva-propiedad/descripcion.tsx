@@ -8,6 +8,8 @@ import {
   Switch,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import StepIndicator from '@/components/StepIndicator';
@@ -43,9 +45,17 @@ export default function Paso5Descripcion() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
       <StepIndicator steps={STEPS} currentStep={4} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
 
         {/* Título */}
         <Text style={styles.sectionTitle}>Título del aviso *</Text>
@@ -177,7 +187,7 @@ export default function Paso5Descripcion() {
           <Text style={styles.continueBtnText}>Vista previa →</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

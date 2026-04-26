@@ -25,20 +25,49 @@ export default function Paso3Caracteristicas() {
   const store = useNuevaPropiedadStore();
 
   const handleContinuar = () => {
-    if (!store.superficieTotal) {
+    if (!store.superficieTotal || store.superficieTotal <= 0) {
       Alert.alert('Requerido', 'Ingresa la superficie total en m².');
+      return;
+    }
+    if (!store.superficieUtil || store.superficieUtil <= 0) {
+      Alert.alert('Requerido', 'Ingresa la superficie útil en m².');
       return;
     }
     router.push('/(tabs)/nueva-propiedad/fotos');
   };
 
-  const isDepartamento = store.tipoPropiedad === 'departamento';
+  const isDepartamento = store.tipoPropiedad === 'departamento' || store.tipoPropiedad === 'loft';
   const isArriendo = store.tipoOperacion === 'arriendo';
+
+  const CONDICION_OPTIONS: { value: 'new' | 'used' | 'not_specified'; label: string; icon: string; desc: string }[] = [
+    { value: 'new',           label: 'Nueva',         icon: '✨', desc: 'Estreno / primera entrega' },
+    { value: 'used',          label: 'Usada',          icon: '🏠', desc: 'Propiedad con dueños anteriores' },
+    { value: 'not_specified', label: 'No especificada', icon: '❓', desc: 'Sin información de condición' },
+  ];
 
   return (
     <View style={styles.container}>
       <StepIndicator steps={STEPS} currentStep={2} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Condición de la propiedad */}
+        <Text style={styles.sectionTitle}>Condición de la propiedad *</Text>
+        <View style={styles.condicionRow}>
+          {CONDICION_OPTIONS.map((op) => (
+            <TouchableOpacity
+              key={op.value}
+              style={[styles.condicionCard, store.condicion === op.value && styles.condicionSelected]}
+              onPress={() => store.setField('condicion', op.value)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.condicionIcon}>{op.icon}</Text>
+              <Text style={[styles.condicionLabel, store.condicion === op.value && styles.condicionLabelSelected]}>
+                {op.label}
+              </Text>
+              <Text style={styles.condicionDesc}>{op.desc}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {/* Superficies */}
         <Text style={styles.sectionTitle}>Superficies</Text>
@@ -48,20 +77,28 @@ export default function Paso3Caracteristicas() {
             <TextInput
               style={styles.numInput}
               value={store.superficieTotal?.toString() ?? ''}
-              onChangeText={(t) => store.setField('superficieTotal', t ? parseFloat(t) : null)}
+              onChangeText={(t) => {
+                const normalized = t.replace(',', '.');
+                const val = parseFloat(normalized);
+                store.setField('superficieTotal', !isNaN(val) && val > 0 ? val : null);
+              }}
               keyboardType="decimal-pad"
-              placeholder="0"
+              placeholder="Ej: 80"
               placeholderTextColor="#bbb"
             />
           </View>
           <View style={styles.inputRow}>
-            <Text style={styles.inputLabel}>Superficie útil (m²)</Text>
+            <Text style={styles.inputLabel}>Superficie útil (m²) *</Text>
             <TextInput
               style={styles.numInput}
               value={store.superficieUtil?.toString() ?? ''}
-              onChangeText={(t) => store.setField('superficieUtil', t ? parseFloat(t) : null)}
+              onChangeText={(t) => {
+                const normalized = t.replace(',', '.');
+                const val = parseFloat(normalized);
+                store.setField('superficieUtil', !isNaN(val) && val > 0 ? val : null);
+              }}
               keyboardType="decimal-pad"
-              placeholder="0"
+              placeholder="Ej: 65"
               placeholderTextColor="#bbb"
             />
           </View>
@@ -269,4 +306,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   continueBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  // Condición selector
+  condicionRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  condicionCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  condicionSelected: { borderColor: '#0033A0', backgroundColor: '#f0f3fa' },
+  condicionIcon: { fontSize: 22, marginBottom: 4 },
+  condicionLabel: { fontSize: 11, fontWeight: '700', color: '#555', textAlign: 'center' },
+  condicionLabelSelected: { color: '#0033A0' },
+  condicionDesc: { fontSize: 9, color: '#999', textAlign: 'center', marginTop: 2 },
 });

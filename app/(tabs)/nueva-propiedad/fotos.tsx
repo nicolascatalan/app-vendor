@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import StepIndicator from '@/components/StepIndicator';
@@ -22,75 +21,117 @@ const MAX_FOTOS = 20;
 
 export default function Paso4Fotos() {
   const router = useRouter();
-  const { fotos, addFoto, removeFoto, reorderFotos, updateFotoMlId, setFotoUploading, setFotoUploadError } =
-    useNuevaPropiedadStore();
+  const {
+    fotos,
+    addFoto,
+    removeFoto,
+    reorderFotos,
+    updateFotoMlId,
+    setFotoUploading,
+    setFotoUploadError,
+    setFotoUploadProgress,
+  } = useNuevaPropiedadStore();
   const { pickFromGallery, pickFromCamera } = useImagePicker();
   const { getAccessToken, refreshAccessToken } = useAuth();
-  const [globalUploading, setGlobalUploading] = useState(false);
+  const [picking, setPicking] = useState(false);
 
-  const uploadSinglePhoto = async (uri: string) => {
+  const uploadSinglePhoto = async (uri: string): Promise<void> => {
     setFotoUploading(uri, true);
     setFotoUploadError(uri, false);
-    let token = await getAccessToken();
-    if (!token) return;
+    setFotoUploadProgress(uri, 0);
 
     try {
-      const mlId = await uploadPhoto(uri, token);
-      updateFotoMlId(uri, mlId);
-    } catch (e: any) {
-      if (e.message === 'TOKEN_EXPIRED') {
-        const newToken = await refreshAccessToken();
-        if (newToken) {
-          try {
-            const mlId = await uploadPhoto(uri, newToken);
-            updateFotoMlId(uri, mlId);
-            return;
-          } catch {}
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        let token = await getAccessToken();
+
+        if (!token) {
+          token = await refreshAccessToken();
+        }
+
+        if (!token) {
+          throw new Error('NO_TOKEN');
+        }
+
+        try {
+          const mlId = await uploadPhoto(uri, token, (progress) => setFotoUploadProgress(uri, progress));
+          updateFotoMlId(uri, mlId);
+          return;
+        } catch (e: any) {
+          if (e.message === 'TOKEN_EXPIRED') {
+            const newToken = await refreshAccessToken();
+
+            if (newToken) {
+              const mlId = await uploadPhoto(uri, newToken, (progress) => setFotoUploadProgress(uri, progress));
+              updateFotoMlId(uri, mlId);
+              return;
+            }
+          }
+
+          if (attempt === 1) {
+            throw e;
+          }
+
+          setFotoUploadProgress(uri, 15);
         }
       }
+    } catch {
       setFotoUploadError(uri, true);
+      setFotoUploadProgress(uri, 0);
     } finally {
       setFotoUploading(uri, false);
     }
   };
 
   const addAndUpload = async (uris: string[]) => {
+    const existingUris = new Set(fotos.map((foto) => foto.uri));
     const available = MAX_FOTOS - fotos.length;
-    const toAdd = uris.slice(0, available);
+    const toAdd = uris.filter((uri) => !existingUris.has(uri)).slice(0, available);
+
+    if (toAdd.length === 0) {
+      Alert.alert('Sin cambios', 'Ya llegaste al máximo de fotos o las seleccionadas ya estaban agregadas.');
+      return;
+    }
+
     for (const uri of toAdd) {
-      addFoto({ uri });
-      uploadSinglePhoto(uri);
+      addFoto({ uri, uploading: true, uploadProgress: 0, uploadError: false });
+      void uploadSinglePhoto(uri);
     }
   };
 
   const handleGallery = async () => {
     try {
+      setPicking(true);
       const picked = await pickFromGallery();
       await addAndUpload(picked.map((p) => p.uri));
     } catch (e: any) {
       Alert.alert('Permiso requerido', e.message);
+    } finally {
+      setPicking(false);
     }
   };
 
   const handleCamera = async () => {
     try {
+      setPicking(true);
       const picked = await pickFromCamera();
       if (picked) await addAndUpload([picked.uri]);
     } catch (e: any) {
       Alert.alert('Permiso requerido', e.message);
+    } finally {
+      setPicking(false);
     }
   };
 
   const retryAll = async () => {
     const failed = fotos.filter((f) => f.uploadError);
     for (const f of failed) {
-      uploadSinglePhoto(f.uri);
+      void uploadSinglePhoto(f.uri);
     }
   };
 
   const uploadedCount = fotos.filter((f) => f.mlId).length;
   const failedCount = fotos.filter((f) => f.uploadError).length;
-  const progress = fotos.length > 0 ? uploadedCount / fotos.length : 0;
+  const uploadingCount = fotos.filter((f) => f.uploading).length;
 
   const canContinue = uploadedCount >= MIN_FOTOS;
 
@@ -116,14 +157,27 @@ export default function Paso4Fotos() {
             <Text style={styles.retryBtnText}>⚠️ {failedCount} foto(s) fallaron — Reintentar</Text>
           </TouchableOpacity>
         )}
+        {uploadingCount > 0 && (
+          <Text style={styles.uploadingHint}>Subiendo {uploadingCount} foto(s) a Portal Inmobiliario…</Text>
+        )}
 
         {/* Botones de acción */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleCamera} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[styles.actionBtn, picking && styles.actionBtnDisabled]}
+            onPress={handleCamera}
+            activeOpacity={0.8}
+            disabled={picking || fotos.length >= MAX_FOTOS}
+          >
             <Text style={styles.actionBtnIcon}>📷</Text>
             <Text style={styles.actionBtnText}>Tomar foto</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleGallery} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[styles.actionBtn, picking && styles.actionBtnDisabled]}
+            onPress={handleGallery}
+            activeOpacity={0.8}
+            disabled={picking || fotos.length >= MAX_FOTOS}
+          >
             <Text style={styles.actionBtnIcon}>🖼️</Text>
             <Text style={styles.actionBtnText}>Elegir de galería</Text>
           </TouchableOpacity>
@@ -184,6 +238,7 @@ const styles = StyleSheet.create({
     borderColor: '#f59e0b',
   },
   retryBtnText: { color: '#92400e', fontWeight: '600', fontSize: 13 },
+  uploadingHint: { fontSize: 12, color: '#0033A0', marginBottom: 4, fontWeight: '600' },
   actionRow: { flexDirection: 'row', gap: 12, marginVertical: 16 },
   actionBtn: {
     flex: 1,
@@ -195,6 +250,7 @@ const styles = StyleSheet.create({
     borderColor: '#0033A0',
     gap: 6,
   },
+  actionBtnDisabled: { opacity: 0.6 },
   actionBtnIcon: { fontSize: 28 },
   actionBtnText: { fontSize: 13, color: '#0033A0', fontWeight: '600' },
   gridHint: { fontSize: 11, color: '#999', marginBottom: 10, textAlign: 'center' },

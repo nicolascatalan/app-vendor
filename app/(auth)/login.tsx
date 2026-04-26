@@ -17,6 +17,7 @@ export default function LoginScreen() {
   const router = useRouter();
 
   useEffect(() => {
+    console.log('[Login] isAuthenticated:', isAuthenticated, 'loading:', loading);
     if (isAuthenticated) {
       router.replace('/(tabs)');
     }

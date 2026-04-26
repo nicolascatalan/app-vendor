@@ -9,10 +9,13 @@ import {
   RefreshControl,
   Alert,
   Linking,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/hooks/useAuth';
-import { getUserItems, pauseItem, activateItem, deleteItem } from '@/services/portalInmobiliario';
+import { getUserItems, pauseItem, activateItem, deleteItem, relistItem } from '@/services/portalInmobiliario';
 
 interface PropertyItem {
   id: string;
@@ -22,11 +25,17 @@ interface PropertyItem {
   thumbnail: string;
   status: string;
   permalink: string;
+  location?: {
+    city?: { name: string };
+    state?: { name: string };
+    address_line?: string;
+  };
+  attributes?: Array<{ id: string; value_name: string }>;
 }
 
 export default function MisPublicaciones() {
   const router = useRouter();
-  const { isAuthenticated, getAccessToken, user } = useAuth();
+  const { isAuthenticated, getAccessToken, refreshAccessToken, user } = useAuth();
   const [items, setItems] = useState<PropertyItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,12 +49,26 @@ export default function MisPublicaciones() {
 
   const loadItems = async () => {
     if (!user) return;
+
     setRefreshing(true);
-    const token = await getAccessToken();
-    if (!token) return;
-    const data = await getUserItems(user.id, token);
-    setItems(data.filter(Boolean));
-    setRefreshing(false);
+
+    try {
+      let token = await getAccessToken();
+
+      if (!token) {
+        token = await refreshAccessToken();
+      }
+
+      if (!token) {
+        setItems([]);
+        return;
+      }
+
+      const data = await getUserItems(user.id, token);
+      setItems(data.filter(Boolean));
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handlePauseToggle = async (item: PropertyItem) => {
@@ -73,6 +96,145 @@ export default function MisPublicaciones() {
             if (!token) return;
             await deleteItem(item.id, token);
             loadItems();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRelist = async (item: PropertyItem) => {
+    Alert.alert(
+      'Republicar aviso',
+      `¿Republicar "${item.title}" con los mismos datos y plan anterior?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Republicar',
+          onPress: async () => {
+            setLoadingId(item.id);
+            let token = await getAccessToken();
+            if (!token) token = await refreshAccessToken();
+            if (!token) { setLoadingId(null); return; }
+            const result = await relistItem(item.id, token);
+            setLoadingId(null);
+            if (result.success) {
+              await loadItems();
+              Alert.alert(
+                '✅ Republicado',
+                'Tu aviso está activo nuevamente.',
+                [
+                  { text: 'Ver aviso', onPress: () => result.permalink && Linking.openURL(result.permalink) },
+                  {
+                    text: 'Compartir',
+                    onPress: () => Share.share({ message: `🏰 ${item.title}\n🔗 ${result.permalink}`, url: result.permalink }),
+                  },
+                  { text: 'OK', style: 'cancel' },
+                ]
+              );
+            } else {
+              Alert.alert('Error al republicar', result.error ?? 'Intenta nuevamente.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  // Descarga imagen remota → base64 → file:// local (ImageManipulator no acepta URLs remotas)
+  const getLocalImageUri = async (remoteUrl: string): Promise<string | null> => {
+    try {
+      // ML thumbnails usan sufijo -I.jpg (300px). Reemplazar por -O.jpg = imagen original (full res)
+      const httpsUrl = remoteUrl
+        .replace('http://', 'https://')
+        .replace(/-[A-Z]\.jpg(\?.*)?$/, '-O.jpg');
+
+      // 1. Descargar como blob
+      const response = await fetch(httpsUrl);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      // 2. Convertir a base64 data URI
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      // 3. ImageManipulator guarda como file:// local
+      const result = await ImageManipulator.manipulateAsync(
+        base64,
+        [],
+        { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      return result.uri;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleShare = async (item: PropertyItem) => {
+    const precio = item.currency_id === 'CLF'
+      ? `UF ${item.price.toLocaleString('es-CL')}`
+      : `$${item.price.toLocaleString('es-CL')}`;
+
+    const attr = (id: string) =>
+      item.attributes?.find((a) => a.id === id)?.value_name ?? null;
+
+    const lineas = [
+      `🏠 ${attr('PROPERTY_TYPE') ?? ''} en ${attr('OPERATION') ?? ''} — ${item.title}`,
+      `💰 Precio: ${precio}`,
+      attr('BEDROOMS')       ? `🛏 Dormitorios: ${attr('BEDROOMS')}` : null,
+      attr('FULL_BATHROOMS') ? `🚿 Baños: ${attr('FULL_BATHROOMS')}` : null,
+      attr('TOTAL_AREA')     ? `📐 Superficie: ${attr('TOTAL_AREA')}` : null,
+      item.location?.address_line
+        ? `📍 ${item.location.address_line}${item.location.city ? `, ${item.location.city.name}` : ''}`
+        : item.location?.city
+        ? `📍 ${item.location.city.name}${item.location.state ? `, ${item.location.state.name}` : ''}`
+        : null,
+      '',
+      '📲 Consultas al corredor de la propiedad.',
+      item.permalink ? `🔗 Ver aviso: ${item.permalink}` : null,
+    ].filter((l) => l !== null).join('\n');
+
+    // Mostrar opciones de share
+    Alert.alert(
+      '📤 Compartir publicación',
+      item.title,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          // Texto plano: WhatsApp, Telegram, Mensajes, etc.
+          text: '💬 Texto + Link',
+          onPress: () => Share.share({ message: lineas, title: item.title }),
+        },
+        {
+          // Solo imagen: hace que iOS muestre Instagram, Facebook, etc.
+          text: '📸 Instagram / Imagen',
+          onPress: async () => {
+            const thumbUrl = item.thumbnail?.replace('http://', 'https://');
+            if (!thumbUrl) {
+              Alert.alert('Sin imagen', 'Esta publicación no tiene imagen disponible.');
+              return;
+            }
+            const localUri = await getLocalImageUri(thumbUrl);
+            if (!localUri) {
+              Alert.alert('Error', 'No se pudo cargar la imagen. Intenta compartir el texto.');
+              return;
+            }
+            // Copiar texto al portapapeles automáticamente
+            await Clipboard.setStringAsync(lineas);
+            // SOLO url (sin message) → iOS detecta imagen → muestra Instagram
+            // El texto ya está en portapapeles — al abrir Instagram solo pegar (mantener presionado)
+            Alert.alert(
+              '📋 Texto copiado',
+              'El texto ya está en tu portapapeles. Al abrir Instagram, mantén presionado el campo de descripción y toca "Pegar".',
+              [{
+                text: 'Abrir share →',
+                onPress: () => Share.share({ url: localUri }, { dialogTitle: 'Compartir imagen' }),
+              },
+              { text: 'Cancelar', style: 'cancel' }]
+            );
           },
         },
       ]
@@ -149,13 +311,31 @@ export default function MisPublicaciones() {
                 <Text style={styles.actionBtnText}>Ver</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionBtn, styles.actionBtnSecondary]}
-                onPress={() => handlePauseToggle(item)}
+                style={[styles.actionBtn, styles.actionBtnShare]}
+                onPress={() => handleShare(item)}
               >
-                <Text style={styles.actionBtnTextSecondary}>
-                  {item.status === 'active' ? 'Pausar' : 'Activar'}
-                </Text>
+                <Text style={styles.actionBtnText}>📤</Text>
               </TouchableOpacity>
+              {item.status === 'closed' ? (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnRelist]}
+                  onPress={() => handleRelist(item)}
+                  disabled={loadingId === item.id}
+                >
+                  <Text style={styles.actionBtnText}>
+                    {loadingId === item.id ? '...' : '🔄 Repub.'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => handlePauseToggle(item)}
+                >
+                  <Text style={styles.actionBtnTextSecondary}>
+                    {item.status === 'active' ? 'Pausar' : 'Activar'}
+                  </Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={() => handleDelete(item)}>
                 <Text style={styles.deleteText}>✕</Text>
               </TouchableOpacity>
@@ -218,6 +398,8 @@ const styles = StyleSheet.create({
   actionBtn: { backgroundColor: '#0033A0', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
   actionBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   actionBtnSecondary: { backgroundColor: '#f0f3fa' },
+  actionBtnRelist: { backgroundColor: '#16a34a' },
+  actionBtnShare: { backgroundColor: '#0ea5e9' },
   actionBtnTextSecondary: { color: '#0033A0', fontSize: 11, fontWeight: '600' },
   deleteText: { color: '#ef4444', fontSize: 16, padding: 4 },
 });

@@ -7,6 +7,7 @@ export interface FotoItem {
   mlId?: string;
   uploading?: boolean;
   uploadError?: boolean;
+  uploadProgress?: number;
 }
 
 export interface NuevaPropiedad {
@@ -15,6 +16,7 @@ export interface NuevaPropiedad {
   tipoPropiedad:
     | 'casa'
     | 'departamento'
+    | 'loft'
     | 'oficina'
     | 'local'
     | 'terreno'
@@ -61,6 +63,12 @@ export interface NuevaPropiedad {
   whatsappActivo: boolean;
   whatsappNumero: string;
   emailCorredor: string;
+
+  // Condición de la propiedad (requerido por ML para ciertas categorías)
+  condicion: 'new' | 'used' | 'not_specified';
+
+  // Plan de publicación elegido por el usuario
+  listingType: 'free' | 'silver' | 'gold' | 'gold_special' | 'gold_pro' | null;
 }
 
 interface NuevaPropiedadActions {
@@ -73,6 +81,7 @@ interface NuevaPropiedadActions {
   updateFotoMlId: (uri: string, mlId: string) => void;
   setFotoUploading: (uri: string, uploading: boolean) => void;
   setFotoUploadError: (uri: string, error: boolean) => void;
+  setFotoUploadProgress: (uri: string, progress: number) => void;
 }
 
 const initialState: NuevaPropiedad = {
@@ -107,6 +116,8 @@ const initialState: NuevaPropiedad = {
   whatsappActivo: false,
   whatsappNumero: '',
   emailCorredor: '',
+  condicion: 'not_specified',
+  listingType: null,
 };
 
 export const useNuevaPropiedadStore = create<NuevaPropiedad & NuevaPropiedadActions>()(
@@ -122,7 +133,7 @@ export const useNuevaPropiedadStore = create<NuevaPropiedad & NuevaPropiedadActi
 
       addFoto: (foto) =>
         set((state) => ({
-          fotos: [...state.fotos, foto],
+          fotos: [...state.fotos, { ...foto, uploadProgress: foto.uploadProgress ?? 0 }],
         })),
 
       removeFoto: (uri) =>
@@ -134,17 +145,36 @@ export const useNuevaPropiedadStore = create<NuevaPropiedad & NuevaPropiedadActi
 
       updateFotoMlId: (uri, mlId) =>
         set((state) => ({
-          fotos: state.fotos.map((f) => (f.uri === uri ? { ...f, mlId } : f)),
+          fotos: state.fotos.map((f) =>
+            f.uri === uri
+              ? { ...f, mlId, uploading: false, uploadError: false, uploadProgress: 100 }
+              : f
+          ),
         })),
 
       setFotoUploading: (uri, uploading) =>
         set((state) => ({
-          fotos: state.fotos.map((f) => (f.uri === uri ? { ...f, uploading } : f)),
+          fotos: state.fotos.map((f) =>
+            f.uri === uri
+              ? { ...f, uploading, uploadProgress: uploading ? f.uploadProgress ?? 0 : f.uploadProgress }
+              : f
+          ),
         })),
 
       setFotoUploadError: (uri, uploadError) =>
         set((state) => ({
-          fotos: state.fotos.map((f) => (f.uri === uri ? { ...f, uploadError } : f)),
+          fotos: state.fotos.map((f) =>
+            f.uri === uri
+              ? { ...f, uploadError, uploading: uploadError ? false : f.uploading }
+              : f
+          ),
+        })),
+
+      setFotoUploadProgress: (uri, progress) =>
+        set((state) => ({
+          fotos: state.fotos.map((f) =>
+            f.uri === uri ? { ...f, uploadProgress: Math.max(0, Math.min(100, progress)) } : f
+          ),
         })),
     }),
     {

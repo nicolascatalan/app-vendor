@@ -21,6 +21,7 @@ const OPERACIONES = [
 const PROPIEDADES = [
   { value: 'casa', label: 'Casa', icon: '🏠' },
   { value: 'departamento', label: 'Departamento', icon: '🏢' },
+  { value: 'loft', label: 'Loft', icon: '🏙️' },
   { value: 'oficina', label: 'Oficina', icon: '💼' },
   { value: 'local', label: 'Local Comercial', icon: '🏪' },
   { value: 'terreno', label: 'Terreno', icon: '🌿' },

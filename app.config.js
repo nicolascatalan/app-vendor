@@ -10,7 +10,11 @@ const {
   ML_SCOPES,
   ML_USE_PKCE,
   GOOGLE_MAPS_API_KEY,
+  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
 } = process.env;
+
+const resolvedGoogleMapsApiKey =
+  GOOGLE_MAPS_API_KEY?.trim() || EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() || '';
 
 module.exports = {
   expo: {
@@ -20,7 +24,7 @@ module.exports = {
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
-    newArchEnabled: false,
+    newArchEnabled: true,
     scheme: 'propublish',
     splash: {
       image: './assets/splash-icon.png',
@@ -81,7 +85,7 @@ module.exports = {
       eas: {
         projectId: 'cc29e7e8-33e4-4118-b2db-1c4cac5fea2b',
       },
-      GOOGLE_MAPS_API_KEY: GOOGLE_MAPS_API_KEY ?? '',
+      GOOGLE_MAPS_API_KEY: resolvedGoogleMapsApiKey,
       ML_APP_ID: ML_APP_ID ?? '',
       ML_APP_SECRET: ML_APP_SECRET ?? '',
       ML_REDIRECT_URI: ML_REDIRECT_URI ?? '',
